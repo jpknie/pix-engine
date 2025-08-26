@@ -1,5 +1,6 @@
 use image::{ImageBuffer, Rgba};
-use piston_window::{clear, image::Image, EventLoop, Filter, G2d, G2dTexture, G2dTextureContext, PistonWindow, Texture, TextureSettings, UpdateEvent, Window, WindowSettings};
+use std::collections::HashSet;
+use piston_window::{clear, image::Image, Button, EventLoop, Filter, G2dTexture, G2dTextureContext, PistonWindow, PressEvent, ReleaseEvent, Texture, TextureSettings, UpdateEvent, Window, WindowSettings, Key, FocusEvent};
 use std::cmp;
 
 /// -------- Engine constants (change to taste) --------
@@ -95,6 +96,7 @@ impl crate::PixelBuffer {
 pub trait Scene {
     fn update(&mut self, dt: f64, fb: &mut crate::PixelBuffer);
     fn draw(&self, fb: &mut crate::PixelBuffer);
+    fn key_event(&mut self, _key: Key, _down: bool) { } // optional
 }
 
 
@@ -105,6 +107,7 @@ pub struct PixEngine {
     framebuffer: PixelBuffer,
     tex_ctx: G2dTextureContext,
     tex: G2dTexture,
+    pressed: HashSet<Key>,
 }
 
 impl PixEngine {
@@ -118,8 +121,8 @@ impl PixEngine {
         let fb = PixelBuffer::new(LOW_W, LOW_H);
         let mut tex_ctx = window.create_texture_context();
         let tex = make_nearest_texture( & mut tex_ctx, & fb.buf);
-
-        Self { window, scene: Box::new(scene), framebuffer: fb, tex_ctx, tex }
+        let pressed = HashSet::new();
+        Self { window, scene: Box::new(scene), framebuffer: fb, tex_ctx, tex, pressed }
     }
 
     pub fn run(&mut self) {
@@ -129,6 +132,30 @@ impl PixEngine {
 
 
         while let Some(e) = self.window.next() {
+            if let Some(btn) = e.press_args() {
+                if let Button::Keyboard(k) = btn {
+                    // Ignore key-repeat: insert returns false if it was already down
+                    if self.pressed.insert(k) {
+                        // scene key-down callback (optional)
+                        self.scene.key_event(k, true);
+                    }
+                }
+            }
+            if let Some(btn) = e.release_args() {
+                if let Button::Keyboard(k) = btn {
+                    if self.pressed.remove(&k) {
+                        // scene key-up callback (optional)
+                        self.scene.key_event(k, false);
+                    }
+                }
+            }
+
+            // --- If window loses focus, clear keys to avoid “stuck key” bugs
+            if let Some(focused) = e.focus_args() {
+                if !focused { self.pressed.clear(); }
+            }
+
+
             if let Some(u) = e.update_args() {
                 acc += u.dt;
                 while acc >= FIXED_DT {
