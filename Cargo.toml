@@ -7,3 +7,5 @@ edition = "2021"
 piston_window = "0.131"   # or latest
 image = "0.24"
 
+[lib]
+name = "pixel_engine"
