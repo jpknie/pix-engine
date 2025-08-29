@@ -1,12 +1,31 @@
 use image::{ImageBuffer, Rgba};
 use std::collections::HashSet;
-use piston_window::{clear, image::Image, Button, EventLoop, Filter, G2dTexture, G2dTextureContext, PistonWindow, PressEvent, ReleaseEvent, Texture, TextureSettings, UpdateEvent, Window, WindowSettings, Key, FocusEvent};
+use piston_window::{
+    clear, image::Image, Button, EventLoop, Filter, Flip, FocusEvent, G2dTexture, G2dTextureContext, Key, PistonWindow, PressEvent, ReleaseEvent, Texture, TextureSettings, UpdateEvent, Window, WindowSettings};
 use std::cmp;
 
 /// -------- Engine constants (change to taste) --------
 const LOW_W: u32 = 320;
 const LOW_H: u32 = 180; // 16:9 pixel canvas
 const FIXED_DT: f64 = 1.0 / 60.0;
+
+
+pub struct Assets<'a> {
+    tex_ctx: &'a mut G2dTextureContext,
+}
+
+impl<'a> Assets<'a> {
+    pub fn load_image(&mut self, path: &str) -> image::RgbaImage {
+        image::open(path).expect("img").to_rgba8()
+    }
+    pub fn load_texture(&mut self, path: &str) -> G2dTexture {
+        Texture::from_path(
+            self.tex_ctx, path, Flip::None,
+            &TextureSettings::new().filter(Filter::Nearest),
+        ).expect("tex")
+    }
+    // later: load_sound, load_font, etc.
+}
 
 /// -------- Render helpers --------
 pub fn make_nearest_texture(tc: &mut G2dTextureContext, buf: &ImageBuffer<Rgba<u8>, Vec<u8>>) -> G2dTexture {
@@ -97,9 +116,8 @@ pub trait Scene {
     fn update(&mut self, dt: f64, fb: &mut crate::PixelBuffer);
     fn draw(&self, fb: &mut crate::PixelBuffer);
     fn key_event(&mut self, _key: Key, _down: bool) { } // optional
+    fn on_load(&mut self, _assets: &mut Assets) {} // once
 }
-
-
 
 pub struct PixEngine {
     window: PistonWindow,
@@ -111,7 +129,7 @@ pub struct PixEngine {
 }
 
 impl PixEngine {
-    pub fn new(window_width: u32, window_height: u32, window_title: &str, scene: impl Scene + 'static ) -> Self {
+    pub fn new(window_width: u32, window_height: u32, window_title: &str, mut scene: impl Scene + 'static ) -> Self {
         let mut window: PistonWindow = WindowSettings::new(window_title, [window_width, window_height])
             .exit_on_esc(true)
             .build()
@@ -122,7 +140,22 @@ impl PixEngine {
         let mut tex_ctx = window.create_texture_context();
         let tex = make_nearest_texture( & mut tex_ctx, & fb.buf);
         let pressed = HashSet::new();
+        // Give the game a chance to load assets safely (no double &mut)
+        {
+            let mut assets = Assets { tex_ctx: &mut tex_ctx };
+            scene.on_load(&mut assets);
+        }
         Self { window, scene: Box::new(scene), framebuffer: fb, tex_ctx, tex, pressed }
+       
+    }
+    
+    pub fn load_sprite_atlas(&mut self, path: &str) -> G2dTexture {
+        Texture::from_path(
+            &mut self.tex_ctx,
+            path,
+            Flip::None,
+            &TextureSettings::new().filter(Filter::Nearest),
+       ).expect("Sprite atlas loading failed!")
     }
 
     pub fn run(&mut self) {
