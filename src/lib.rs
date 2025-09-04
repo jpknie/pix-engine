@@ -6,9 +6,56 @@ use std::cmp;
 
 /// -------- Engine constants (change to taste) --------
 const LOW_W: u32 = 320;
-const LOW_H: u32 = 180; // 16:9 pixel canvas
+const LOW_H: u32 = 200; // 16:9 pixel canvas
 const FIXED_DT: f64 = 1.0 / 60.0;
 
+struct Camera {
+    pub x: f32,
+    pub y: f32,
+    pub viewport_w: u32,
+    pub viewport_h: u32,
+    pub zoom: f32,
+}
+
+impl Camera {
+    fn new() -> Self {
+        Self { x: 0.0, y: 0.0, viewport_w: LOW_W, viewport_h: LOW_H, zoom: 1.0, }
+    }
+
+    pub fn world_to_screen(&self, wx: f32, wy: f32) -> Option<(i32, i32)> {
+        let screen_pixel_x = ((wx - self.x) * self.zoom).floor() as i32;
+        let screen_pixel_y = ((wy - self.y) * self.zoom).floor() as i32;
+
+        if screen_pixel_x < 0 
+            || screen_pixel_y < 0 
+            || screen_pixel_x >= self.viewport_w as i32 
+            || screen_pixel_y >= self.viewport_h as i32 
+        {
+            None
+        } else {
+            Some((screen_pixel_x, screen_pixel_y))
+        }
+    }
+
+    pub fn screen_to_world(&self, sx: i32, sy: i32) -> (f32, f32) {
+        let wx = (sx as f32) / self.zoom + self.x;
+        let wy = (sy as f32) / self.zoom + self.y;
+        (wx, wy)
+    }
+
+    pub fn visible_tiles(&self, tile_size: u32) -> (i32, i32, i32, i32) {
+        let x0 = (self.x / tile_size as f32).floor() as i32;
+        let y0 = (self.y / tile_size as f32).floor() as i32;
+
+        let tiles_x = (self.viewport_w / tile_size) as i32 + 2; // cover edges
+        let tiles_y = (self.viewport_h / tile_size) as i32 + 2;
+
+        let x1 = x0 + tiles_x;
+        let y1 = y0 + tiles_y;
+
+        (x0, y0, x1, y1)
+    }
+}
 
 pub struct Assets<'a> {
     tex_ctx: &'a mut G2dTextureContext,
@@ -129,9 +176,10 @@ pub struct PixEngine {
 }
 
 impl PixEngine {
-    pub fn new(window_width: u32, window_height: u32, window_title: &str, mut scene: impl Scene + 'static ) -> Self {
+    pub fn new(window_width: u32, window_height: u32, fullscreen: bool, window_title: &str, mut scene: impl Scene + 'static ) -> Self {
         let mut window: PistonWindow = WindowSettings::new(window_title, [window_width, window_height])
             .exit_on_esc(true)
+            .fullscreen(fullscreen)
             .build()
             .unwrap();
         window.set_ups(120);   // high logical UPS for smooth physics
