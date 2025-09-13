@@ -9,7 +9,19 @@ const LOW_W: u32 = 320;
 const LOW_H: u32 = 200; // 16:9 pixel canvas
 const FIXED_DT: f64 = 1.0 / 60.0;
 
-struct Camera {
+pub fn div_to_floor(a: i32, b: i32) -> i32 {
+    let mut r = a / b;
+    if (a ^ b) < 0 && a % b != 0 { r -= 1; }
+    r
+}
+
+#[inline]
+fn sprite_visible(sx: i32, sy: i32, sw: i32, sh: i32, vw: i32, vh: i32) -> bool {
+    // rect (sx..sx+sw, sy..sy+sh) intersects (0..vw, 0..vh)
+    !(sx >= vw || sy >= vh || sx + sw <= 0 || sy + sh <= 0)
+}
+
+pub struct Camera {
     pub x: f32,
     pub y: f32,
     pub viewport_w: u32,
@@ -22,19 +34,11 @@ impl Camera {
         Self { x: 0.0, y: 0.0, viewport_w: LOW_W, viewport_h: LOW_H, zoom: 1.0, }
     }
 
-    pub fn world_to_screen(&self, wx: f32, wy: f32) -> Option<(i32, i32)> {
-        let screen_pixel_x = ((wx - self.x) * self.zoom).floor() as i32;
-        let screen_pixel_y = ((wy - self.y) * self.zoom).floor() as i32;
-
-        if screen_pixel_x < 0 
-            || screen_pixel_y < 0 
-            || screen_pixel_x >= self.viewport_w as i32 
-            || screen_pixel_y >= self.viewport_h as i32 
-        {
-            None
-        } else {
-            Some((screen_pixel_x, screen_pixel_y))
-        }
+    #[inline]
+    pub fn world_to_screen(&self, wx: f32, wy: f32) -> (i32, i32) {
+        let sx = ((wx - self.x) * self.zoom).floor() as i32;
+        let sy = ((wy - self.y) * self.zoom).floor() as i32;
+        (sx, sy)
     }
 
     pub fn screen_to_world(&self, sx: i32, sy: i32) -> (f32, f32) {
@@ -126,6 +130,25 @@ impl crate::PixelBuffer {
             if e2 <= dx { err += dx; y0 += sy; }
         }
     }
+
+    pub fn blit_to_camera(&mut self, cam: &Camera, sprite_w: u32, sprite_h: u32, pixels: &[[u8; 4]], world_x: f32, world_y: f32) {
+      let (sx, sy) = cam.world_to_screen(world_x, world_y);
+
+      let sw = (sprite_w as f32 * cam.zoom).ceil() as i32;  // scale if zoom != 1
+      let sh = (sprite_h as f32 * cam.zoom).ceil() as i32;
+
+      let vw = cam.viewport_w as i32;
+      let vh = cam.viewport_h as i32;
+
+      if !sprite_visible(sx, sy, sw, sh, vw, vh) {
+        return; // fully off-screen, skip
+      }
+
+       // If zoom == 1.0, call your unscaled blit.
+       // <to support zoom, route to a scaled blitter.
+       self.blit_rgba(sx, sy, sprite_w, sprite_h, pixels);
+    }
+
     /// Alpha-blit a small sprite buffer (premult not required; simple over)
     pub fn blit_rgba(
         &mut self,
